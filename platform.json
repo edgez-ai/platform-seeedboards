@@ -231,12 +231,7 @@
       "type": "framework",
       "optional": true,
       "owner": "platformio",
-      "version": "~4.30000.0",
-      "optionalVersions": [
-        "~4.20000.0",
-        "~4.10000.0",
-        "~4.00000.0"
-      ]
+      "version": "https://github.com/platformio/platformio-pkg-framework-zephyr/releases/download/v4.3.0/platformio-framework-zephyr-4.3.0.zip"
     },
     "tool-adafruit-nrfutil": {
       "owner": "platformio",
