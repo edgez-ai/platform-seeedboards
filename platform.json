@@ -231,10 +231,11 @@
       "type": "framework",
       "optional": true,
       "owner": "platformio",
-      "version": "~3.40201.251021",
+      "version": "~4.30000.0",
       "optionalVersions": [
-        "~3.40200.0",
-        "~3.40100.0"
+        "~4.20000.0",
+        "~4.10000.0",
+        "~4.00000.0"
       ]
     },
     "tool-adafruit-nrfutil": {
