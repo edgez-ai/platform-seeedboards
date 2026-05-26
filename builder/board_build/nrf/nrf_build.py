@@ -418,6 +418,30 @@ elif upload_protocol == "sam-ba":
 
 elif upload_protocol.startswith("jlink"):
 
+    mcu = (board.get("build.mcu") or "").strip().lower()
+    jlink_device = (env.BoardConfig().get("debug", {}).get("jlink_device") or "").strip()
+
+    # Some board metadata uses generic part placeholders (for example
+    # nRF54L15_xxAA) that are not accepted by newer J-Link versions.
+    # Resolve those to explicit cores automatically.
+    mcu_to_jlink_device = {
+        "nrf54l15": "NRF54L15_M33",
+        "nrf54l10": "NRF54L10_M33",
+        "nrf54l05": "NRF54L05_M33",
+    }
+
+    if (not jlink_device) or (
+        mcu in mcu_to_jlink_device and jlink_device.lower().endswith("_xxaa")
+    ):
+        inferred_jlink_device = mcu_to_jlink_device.get(mcu)
+        if inferred_jlink_device:
+            if jlink_device and jlink_device != inferred_jlink_device:
+                print(
+                    "Warning! Replacing unsupported J-Link device '%s' with '%s'."
+                    % (jlink_device, inferred_jlink_device)
+                )
+            jlink_device = inferred_jlink_device
+
     def _jlink_cmd_script(env, source):
         build_dir = env.subst("$BUILD_DIR")
         if not isdir(build_dir):
@@ -443,7 +467,7 @@ elif upload_protocol.startswith("jlink"):
         __jlink_cmd_script=_jlink_cmd_script,
         UPLOADER="JLink.exe" if system() == "Windows" else "JLinkExe",
         UPLOADERFLAGS=[
-            "-device", env.BoardConfig().get("debug", {}).get("jlink_device"),
+            "-device", jlink_device,
             "-speed", env.GetProjectOption("debug_speed", "4000"),
             "-if", ("jtag" if upload_protocol == "jlink-jtag" else "swd"),
             "-autoconnect", "1",
