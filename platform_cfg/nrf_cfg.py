@@ -11,6 +11,12 @@ def configure_nrf_default_packages(self, variables, targets):
             "upload_protocol",
             self.board_config(board).get("upload.protocol", ""))
 
+        # nRF DFU package generation and serial upload both rely on
+        # tool-adafruit-nrfutil. Ensure it's available for any board
+        # that selects nrfutil as the upload protocol.
+        if upload_protocol == "nrfutil":
+            self.packages["tool-adafruit-nrfutil"]["optional"] = False
+
         self.packages["toolchain-gccarmnoneeabi"]["optional"] = False
         # if board in ("seeed-xiao-afruitnrf52-nrf52840", "seeed-xiao-ble-nrf52840-sense"):
         if "afruitnrf52-nrf52840" in board:

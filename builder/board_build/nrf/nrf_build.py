@@ -158,6 +158,15 @@ env.Append(
 )
 
 upload_protocol = env.subst("$UPLOAD_PROTOCOL")
+nrfutil_pkg_dir = platform.get_package_dir("tool-adafruit-nrfutil") or ""
+
+if upload_protocol == "nrfutil" and not nrfutil_pkg_dir:
+    sys.stderr.write(
+        "Error: Missing PlatformIO package 'tool-adafruit-nrfutil'. "
+        "Run 'pio pkg install -g -p platformio/tool-adafruit-nrfutil' "
+        "or reinstall the active platform.\n"
+    )
+    env.Exit(1)
 
 if "nrfutil" == upload_protocol or (
     board.get("build.bsp.name", "nrf5") == "adafruit"
@@ -168,8 +177,7 @@ if "nrfutil" == upload_protocol or (
             PackageDfu=Builder(
                 action=env.VerboseAction(" ".join([
                     '"$PYTHONEXE"',
-                    '"%s"' % join(platform.get_package_dir(
-                        "tool-adafruit-nrfutil") or "", "adafruit-nrfutil.py"),
+                    '"%s"' % join(nrfutil_pkg_dir, "adafruit-nrfutil.py"),
                     "dfu",
                     "genpkg",
                     "--dev-type",
@@ -360,8 +368,7 @@ elif upload_protocol == "nrfjprog":
 
 elif upload_protocol == "nrfutil":
     env.Replace(
-        UPLOADER=join(platform.get_package_dir(
-            "tool-adafruit-nrfutil") or "", "adafruit-nrfutil.py"),
+        UPLOADER=join(nrfutil_pkg_dir, "adafruit-nrfutil.py"),
         UPLOADERFLAGS=[
             "dfu",
             "serial",
