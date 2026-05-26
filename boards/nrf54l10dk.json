@@ -1,0 +1,60 @@
+{
+  "build": {
+    "arduino": {
+      "ldscript": "nrf54l10_s145_v9.ld"
+    },
+    "core": "nRF5",
+    "cpu": "cortex-m33",
+    "extra_flags": "-DARDUINO_NRF54L10_DK -DNRF54L10_XXAA",
+    "f_cpu": "128000000L",
+    "mcu": "nrf54l10",
+    "variant": "nrf54l10dk",
+    "bsp": {
+      "name": "adafruit"
+    },
+    "softdevice": {
+      "sd_flags": "-DS145",
+      "sd_name": "s145",
+      "sd_version": "9.0.0",
+      "sd_fwid": "0x3024"
+    },
+    "bootloader": {
+      "settings_addr": "0x0FF000"
+    }
+  },
+  "connectivity": [
+    "bluetooth"
+  ],
+  "debug": {
+    "default_tools": [
+      "jlink"
+    ],
+    "jlink_device": "nRF54L10_xxAA",
+    "openocd_target": "$PROJECT_CORE_DIR/platforms/\"$PIOPLATFORM\"/builder/board_build/nrf/nrf54l.cfg",
+    "onboard_tools": [
+      "cmsis-dap",
+      "jlink"
+    ]
+  },
+  "frameworks": [
+    "arduino"
+  ],
+  "name": "Nordic nRF54L10-DK",
+  "upload": {
+    "maximum_ram_size": 127872,
+    "maximum_size": 846848,
+    "speed": 115200,
+    "protocol": "nrfutil",
+    "protocols": [
+      "jlink",
+      "nrfjprog",
+      "cmsis-dap",
+      "nrfutil"
+    ],
+    "use_1200bps_touch": true,
+    "require_upload_port": true,
+    "wait_for_upload_port": true
+  },
+  "url": "https://www.nordicsemi.com/Products/nRF54L10",
+  "vendor": "Nordic"
+}

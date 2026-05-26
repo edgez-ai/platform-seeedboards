@@ -1,0 +1,64 @@
+{
+  "build": {
+    "arduino": {
+      "ldscript": "nrf54l15_s145_v9.ld"
+    },
+    "core": "nRF5",
+    "cpu": "cortex-m33",
+    "extra_flags": "-DARDUINO_NRF54L15_DK -DNRF54L15_XXAA",
+    "f_cpu": "128000000L",
+    "mcu": "nrf54l15",
+    "zephyr": {
+      "variant": "nrf54l15dk/nrf54l15/cpuapp"
+    },
+    "variant": "nrf54l15dk",
+    "bsp": {
+      "name": "adafruit"
+    },
+    "softdevice": {
+      "sd_flags": "-DS145",
+      "sd_name": "s145",
+      "sd_version": "9.0.0",
+      "sd_fwid": "0x3024"
+    },
+    "bootloader": {
+      "settings_addr": "0x17F000"
+    }
+  },
+  "connectivity": [
+    "bluetooth"
+  ],
+  "debug": {
+    "default_tools": [
+      "jlink"
+    ],
+    "jlink_device": "nRF54L15_xxAA",
+    "openocd_target": "$PROJECT_CORE_DIR/platforms/\"$PIOPLATFORM\"/builder/board_build/nrf/nrf54l.cfg",
+    "onboard_tools": [
+      "cmsis-dap",
+      "jlink"
+    ]
+  },
+  "frameworks": [
+    "arduino",
+    "zephyr"
+  ],
+  "name": "Nordic nRF54L15-DK",
+  "upload": {
+    "maximum_ram_size": 172928,
+    "maximum_size": 1371136,
+    "speed": 115200,
+    "protocol": "nrfutil",
+    "protocols": [
+      "jlink",
+      "nrfjprog",
+      "cmsis-dap",
+      "nrfutil"
+    ],
+    "use_1200bps_touch": true,
+    "require_upload_port": true,
+    "wait_for_upload_port": true
+  },
+  "url": "https://www.nordicsemi.com/Products/Development-hardware/nRF54L15-DK",
+  "vendor": "Nordic"
+}
