@@ -10,18 +10,6 @@ The [Seeed Studio XIAO Series](https://wiki.seeedstudio.com/SeeedStudio_XIAO_Ser
 1. [Install PlatformIO](http://platformio.org)
 2. Create PlatformIO project and configure a platform option in [platformio.ini](http://docs.platformio.org/page/projectconf.html) file:
 
-### Stable version
-
-```ini
-[env:stable]
-platform = Seeed Studio
-board = ...
-framework = arduino
-...
-```
-
-### Development version
-
 ```ini
 [env:development]
 platform = https://github.com/Seeed-Studio/platform-seeedboards.git
@@ -33,6 +21,14 @@ framework = arduino
 ## Configuration
 
 Please navigate to [documentation](http://docs.platformio.org/page/platforms/seeedxiao.html).
+
+## Attribution (ESP32)
+
+The ESP32-related platform/build integration in this repository is based in part on work from the pioarduino project:
+
+- https://github.com/pioarduino/platform-espressif32
+
+We acknowledge and thank the pioarduino maintainers and contributors.
 
 ## Factory Reset for XIAO nRF54L15
 

@@ -26,11 +26,22 @@ from SCons.Script import (COMMAND_LINE_TARGETS, AlwaysBuild, Builder, Default,
 
 env = DefaultEnvironment()
 platform = env.PioPlatform()
+board = env.BoardConfig()
 
 
 FRAMEWORK_DIR = platform.get_package_dir("framework-arduino-silabs")
 VARIANT_DIR = join(FRAMEWORK_DIR, "variants", "xiao_mg24")
-CORE_DIR = join(FRAMEWORK_DIR, "cores", "silabs")
+TOOL_CHAIN_DIR = platform.get_package_dir("toolchain-gccarmnoneeabi")
+TOOL_CHAIN_BIN_DIR = join(TOOL_CHAIN_DIR, "bin")
+board_core = board.get("build.core", "silabs")
+core_candidates = [board_core, "gecko", "silabs"]
+CORE_DIR = None
+for core_name in core_candidates:
+    candidate = join(FRAMEWORK_DIR, "cores", core_name)
+    if isdir(candidate):
+        CORE_DIR = candidate
+        break
+assert isdir(CORE_DIR)
 
 # Generate includes.txt
 def generate_includes_file(root_dir, output_file="includes.txt", prefix="-iwithprefixbefore"):
@@ -38,7 +49,12 @@ def generate_includes_file(root_dir, output_file="includes.txt", prefix="-iwithp
     with open(output_path, "w", encoding="utf-8") as f:
         for dirpath, dirnames, _ in os.walk(root_dir):
             rel_path = os.path.relpath(dirpath, root_dir).replace("\\", "/")  # Calculate relative paths and convert to Unix style
-            if rel_path.endswith("openthread/include/openthread/platform") or rel_path.endswith("matter_2.2.0/src/app"):
+            if (
+                rel_path.endswith("openthread/include/openthread/platform")
+                or rel_path.endswith("include/openthread/platform")
+                or rel_path.endswith("include/flatbuffers")
+                or rel_path.endswith("matter_2.2.0/src/app")
+            ):
                 continue  # Skip this path  Because time.h here conflicts
             f.write(f"{prefix}/{rel_path}\n")
 
@@ -51,25 +67,23 @@ def set_case_sensitivity(directory):
             ["fsutil", "file", "setCaseSensitiveInfo", directory, "enable"],
             capture_output=True, text=True, shell=True
         )
-        if result.returncode == 0:
-            print(f"成功启用 {directory} 的大小写敏感模式")
-        else:
-            print(f"设置失败: {result.stderr}")
+        if result.returncode != 0:
+            print(f"Warning: failed to enable case sensitivity for {directory}: {result.stderr}")
     except Exception as e:
-        print(f"发生错误: {e}")
+        print(f"Warning: exception while enabling case sensitivity for {directory}: {e}")
 
-if IS_WINDOWS:
+if IS_WINDOWS and isdir(join(CORE_DIR, "api")):
     set_case_sensitivity(join(CORE_DIR,"api"))
 
 env.Replace(
-    AR="arm-none-eabi-ar",
-    AS="arm-none-eabi-as",
-    CC="arm-none-eabi-gcc",
-    CXX="arm-none-eabi-g++",
-    GDB="arm-none-eabi-gdb",
-    OBJCOPY="arm-none-eabi-objcopy",
-    RANLIB="arm-none-eabi-ranlib",
-    SIZETOOL="arm-none-eabi-size",
+    AR=join(TOOL_CHAIN_BIN_DIR, "arm-none-eabi-ar"),
+    AS=join(TOOL_CHAIN_BIN_DIR, "arm-none-eabi-as"),
+    CC=join(TOOL_CHAIN_BIN_DIR, "arm-none-eabi-gcc"),
+    CXX=join(TOOL_CHAIN_BIN_DIR, "arm-none-eabi-g++"),
+    GDB=join(TOOL_CHAIN_BIN_DIR, "arm-none-eabi-gdb"),
+    OBJCOPY=join(TOOL_CHAIN_BIN_DIR, "arm-none-eabi-objcopy"),
+    RANLIB=join(TOOL_CHAIN_BIN_DIR, "arm-none-eabi-ranlib"),
+    SIZETOOL=join(TOOL_CHAIN_BIN_DIR, "arm-none-eabi-size"),
 
     ARFLAGS=["rc"],
 

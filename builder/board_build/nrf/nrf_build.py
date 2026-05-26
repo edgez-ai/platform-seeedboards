@@ -60,7 +60,7 @@ variant = board.get("build.variant", "")
 
 def _ensure_pyocd_installed():
     # Always use the forked pyOCD with nRF54LM20A support, regardless of MCU.
-    pyocd_spec = "pyocd @ git+https://github.com/StarSphere-1024/pyOCD.git@nrf54lm20a"
+    pyocd_spec = "pyocd @ git+https://github.com/StarSphere-1024/pyOCD.git@lm20_stable"
     expected_url_substring = "github.com/StarSphere-1024/pyOCD"
 
     def _installed_pyocd_is_expected() -> bool:
@@ -379,13 +379,28 @@ elif upload_protocol == "nrfutil":
     ]
 
 elif upload_protocol == "sam-ba":
+    bossac = join(platform.get_package_dir("tool-bossac") or "", "bossac")
+    if system() == "Windows":
+        bossac += ".exe"
     env.Replace(
-        UPLOADER="bossac",
+        UPLOADER=bossac,
         UPLOADERFLAGS=[
-            "--port", '"$UPLOAD_PORT"', "--write", "--erase", "-U", "--reset"
+            "--port", '"$UPLOAD_PORT"',
+            "--write",
+            "--verify",
+            "--reset"
         ],
-        UPLOADCMD="$UPLOADER $UPLOADERFLAGS $SOURCES"
+        UPLOADCMD='$UPLOADER $UPLOADERFLAGS "${SOURCE.get_abspath()}"'
     )
+
+    env.Append(UPLOADERFLAGS=["--erase"])
+    if env.BoardConfig().get("upload.native_usb", False):
+        env.Append(UPLOADERFLAGS=["-U"])
+
+    upload_offset = board.get("upload.offset_address")
+    if upload_offset:
+        env.Append(UPLOADERFLAGS=["--offset", upload_offset])
+
     if int(ARGUMENTS.get("PIOVERBOSE", 0)):
         env.Prepend(UPLOADERFLAGS=["--info", "--debug"])
 
@@ -474,6 +489,46 @@ elif upload_protocol == "pyocd":
     )
     upload_actions = [env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE")]
 
+elif upload_protocol == "probe-rs":
+    upload_config = board.get("upload", {})
+    probe_rs_chip = upload_config.get("probe_rs_chip")
+    if not probe_rs_chip:
+        mcu = (board.get("build.mcu") or "").strip()
+        mcu_to_probe_rs_chip = {
+            "nrf54lm20a": "nRF54LM20A",
+            "nrf54l15": "nRF54L15",
+        }
+        probe_rs_chip = mcu_to_probe_rs_chip.get(mcu)
+
+    if not probe_rs_chip:
+        sys.stderr.write(
+            "Error: Unknown MCU '%s' for probe-rs. Set 'upload.probe_rs_chip' in the board JSON.\n"
+            % (board.get("build.mcu") or "")
+        )
+        env.Exit(1)
+
+    probe_rs_args = [
+        "download",
+        "--chip",
+        probe_rs_chip,
+        "--protocol",
+        "swd",
+        "--binary-format",
+        "ihex",
+        "--verify",
+    ]
+
+    upload_port = env.subst("$UPLOAD_PORT")
+    if upload_port:
+        probe_rs_args.extend(["--probe", upload_port])
+
+    env.Replace(
+        UPLOADER="probe-rs",
+        UPLOADERFLAGS=probe_rs_args,
+        UPLOADCMD='"$UPLOADER" $UPLOADERFLAGS "$SOURCE"',
+    )
+    upload_actions = [env.VerboseAction("$UPLOADCMD", "Uploading $SOURCE")]
+
 elif upload_protocol in debug_tools:
     openocd_args = [
         "-d%d" % (2 if int(ARGUMENTS.get("PIOVERBOSE", 0)) else 1)
@@ -493,6 +548,10 @@ elif upload_protocol in debug_tools:
     elif board.get("build.mcu") == "nrf54l15":
         openocd_args.extend([
             "-c", "init; mww 0x5004b500 0x101; load_image {$SOURCE}; reset run; exit"
+        ])
+    elif board.get("build.mcu") == "nrf54lm20a":
+        openocd_args.extend([
+            "-c", "init; mww 0x5004e500 0x101; load_image {$SOURCE}; reset run; exit"
         ])
     else:
        print("Warning! Uploading via OpenOCD is not yet supported for this MCU.")

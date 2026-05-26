@@ -4,7 +4,6 @@
 #include <zephyr/spinlock.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
@@ -21,9 +20,17 @@
 
 /* devicetree: user said led0/sw0 already exist */
 #define LED0_NODE DT_ALIAS(led0)
+#define RFSW_CTL_NODE DT_NODELABEL(rfsw_ctl)
 
 static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET_OR(LED0_NODE, gpios, { 0 });
 static uint8_t led_level;
+#if DT_NODE_EXISTS(RFSW_CTL_NODE)
+static const struct gpio_dt_spec rfsw_gpio = {
+	.port = DEVICE_DT_GET(DT_GPIO_CTLR(RFSW_CTL_NODE, enable_gpios)),
+	.pin = DT_GPIO_PIN(RFSW_CTL_NODE, enable_gpios),
+	.dt_flags = DT_GPIO_FLAGS(RFSW_CTL_NODE, enable_gpios),
+};
+#endif
 
 LOG_MODULE_REGISTER(app, LOG_LEVEL_DBG);
 
@@ -33,8 +40,9 @@ static bool gpio_ready(const struct gpio_dt_spec *spec);
  * LED wiring contract (per user spec): physical GPIO level 0 -> LED ON, 1 -> LED OFF.
  * We therefore use gpio_pin_set_raw() (no DT active-low inversion).
  */
-#define LED_PHYS_ON_LEVEL  (0)
-#define LED_PHYS_OFF_LEVEL (1)
+#define LED0_ACTIVE_LOW ((DT_GPIO_FLAGS(LED0_NODE, gpios) & GPIO_ACTIVE_LOW) != 0U)
+#define LED_PHYS_ON_LEVEL  (LED0_ACTIVE_LOW ? 0U : 1U)
+#define LED_PHYS_OFF_LEVEL (LED0_ACTIVE_LOW ? 1U : 0U)
 
 enum led_state {
 	LED_STATE_SOLID_ON,
@@ -135,13 +143,42 @@ static int init_led0(void)
 	return 0;
 }
 
+static int init_antenna_path(void)
+{
+#if DT_NODE_EXISTS(RFSW_CTL_NODE)
+	if (!gpio_ready(&rfsw_gpio)) {
+		LOG_ERR("RF switch GPIO device not ready");
+		return -ENODEV;
+	}
+
+	int err = gpio_pin_configure_dt(&rfsw_gpio, GPIO_OUTPUT);
+	if (err) {
+		LOG_ERR("RF switch GPIO configure failed: %d", err);
+		return err;
+	}
+
+	/* xiao_nrf54l15: logical 0 selects the external antenna path. */
+	err = gpio_pin_set_dt(&rfsw_gpio, 0);
+	if (err) {
+		LOG_ERR("RF switch GPIO set failed: %d", err);
+		return err;
+	}
+
+	LOG_INF("RF path: external antenna selected");
+#else
+	LOG_INF("RF path: fixed antenna (no RF switch)");
+#endif
+
+	return 0;
+}
+
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, sizeof(CONFIG_BT_DEVICE_NAME) - 1),
+	BT_DATA_BYTES(BT_DATA_UUID128_ALL, BT_UUID_ONOFF_VAL),
 };
 
 static const struct bt_data sd[] = {
-	BT_DATA_BYTES(BT_DATA_UUID128_ALL, BT_UUID_ONOFF_VAL),
+	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, sizeof(CONFIG_BT_DEVICE_NAME) - 1),
 };
 
 static struct k_work_delayable adv_restart_work;
@@ -159,6 +196,7 @@ static int adv_start(void)
 	if (err == -EALREADY) {
 		return 0;
 	}
+
 	return err;
 }
 
@@ -290,6 +328,13 @@ int main(void)
 	}
 
 	LOG_INF("bluetooth enabled");
+
+	err = init_antenna_path();
+	if (err) {
+		LOG_ERR("antenna path init failed: %d", err);
+		return err;
+	}
+
 	k_work_init_delayable(&adv_restart_work, adv_restart_handler);
 	adv_retry_attempt = 0U;
 

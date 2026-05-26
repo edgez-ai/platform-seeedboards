@@ -11,15 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# Attribution:
+# This ESP32 build script is based in part on pioarduino project work:
+# https://github.com/pioarduino/platform-espressif32
+# Modified by Seeed Studio.
 
 import re
 import sys
-from os.path import isfile, join
+from os.path import dirname, isdir, isfile, join
 
 from SCons.Script import (
     ARGUMENTS, COMMAND_LINE_TARGETS, AlwaysBuild, Builder, Default,
     DefaultEnvironment)
 
+from platformio.proc import get_pythonexe_path
 from platformio.util import get_serial_ports
 
 # env = DefaultEnvironment()
@@ -28,13 +34,101 @@ Import("env")
 platform = env.PioPlatform()
 config = env.GetProjectConfig()
 
+
+def _get_python_executable(env):
+    candidate = get_pythonexe_path() or ""
+    if candidate and isfile(candidate):
+        return candidate
+
+    core_penv_python = join(env.subst("$PROJECT_CORE_DIR"), "penv", "bin", "python")
+    if isfile(core_penv_python):
+        return core_penv_python
+
+    if sys.executable and isfile(sys.executable):
+        return sys.executable
+
+    return "python3"
+
+
+env.Replace(PYTHONEXE=_get_python_executable(env))
+
 #
 # Helpers
 #
 
 
 FRAMEWORK_DIR = platform.get_package_dir("framework-arduinoespressif32")
-print("franwork_dir = ",FRAMEWORK_DIR)
+
+
+def _get_core_dir(config):
+    return config.get("platformio", "core_dir")
+
+
+def _get_packages_dir(config):
+    return config.get("platformio", "packages_dir")
+
+
+def _get_tool_dir(platform, package_name):
+    tool_dir = platform.get_package_dir(package_name) or ""
+    if tool_dir and isdir(tool_dir):
+        return tool_dir
+
+    fallback = join(_get_core_dir(config), "tools", package_name)
+    if isdir(fallback):
+        return fallback
+
+    return tool_dir
+
+
+def _get_toolchain_bin_dir(platform, mcu):
+    package_name = (
+        "toolchain-riscv32-esp"
+        if mcu in ("esp32c2", "esp32c3", "esp32c5", "esp32c6", "esp32h2", "esp32p4")
+        else "toolchain-xtensa-esp-elf"
+    )
+    tool_dir = _get_tool_dir(platform, package_name)
+    if not tool_dir:
+        tool_dir = join(_get_core_dir(config), "tools", package_name)
+
+    candidate = join(tool_dir, "bin")
+    if isdir(candidate):
+        return candidate
+
+    fallback = join(_get_core_dir(config), "tools", package_name, "bin")
+    return fallback if isdir(fallback) else ""
+
+
+def _get_esptool_program(platform):
+    search_dirs = []
+    tool_dir = _get_tool_dir(platform, "tool-esptoolpy") or ""
+    if tool_dir:
+        search_dirs.append(tool_dir)
+
+    packages_fallback = join(_get_packages_dir(config), "tool-esptoolpy")
+    if packages_fallback not in search_dirs:
+        search_dirs.append(packages_fallback)
+
+    core_tools_fallback = join(_get_core_dir(config), "tools", "tool-esptoolpy")
+    if core_tools_fallback not in search_dirs:
+        search_dirs.append(core_tools_fallback)
+
+    for base in search_dirs:
+        if not isdir(base):
+            continue
+
+        candidate = join(base, "esptool.py")
+        if isfile(candidate):
+            return candidate
+
+        candidate = join(base, "esptool")
+        if isfile(candidate):
+            return candidate
+
+        candidate = join(base, "bin", "esptool.py")
+        if isfile(candidate):
+            return candidate
+
+    return "esptool.py"
 
 def BeforeUpload(target, source, env):
     # print("in main py BeforeUpload")
@@ -259,6 +353,32 @@ if mcu in ("esp32c2", "esp32c3", "esp32c5", "esp32c6", "esp32h2", "esp32p4"):
 if "INTEGRATION_EXTRA_DATA" not in env:
     env["INTEGRATION_EXTRA_DATA"] = {}
 
+ESPTOOLPROG = _get_esptool_program(platform)
+ESPTOOL_DIR = _get_tool_dir(platform, "tool-esptoolpy")
+TOOLCHAIN_BIN_DIR = _get_toolchain_bin_dir(platform, mcu)
+GDB_PACKAGE_DIR = _get_tool_dir(
+    platform,
+    "tool-riscv32-esp-elf-gdb"
+    if mcu in ("esp32c2", "esp32c3", "esp32c5", "esp32c6", "esp32h2", "esp32p4")
+    else "tool-xtensa-esp-elf-gdb",
+)
+
+def _tool(name):
+    return join(TOOLCHAIN_BIN_DIR, name) if TOOLCHAIN_BIN_DIR else name
+
+
+ESPTOOLCMD = '"$OBJCOPY"'
+OBJCOPY_PROG = ESPTOOLPROG
+if ESPTOOLPROG.endswith("esptool.py"):
+    module_base = dirname(ESPTOOLPROG)
+    if module_base:
+        env.PrependENVPath("PYTHONPATH", module_base)
+    if ESPTOOL_DIR:
+        env.PrependENVPath("PYTHONPATH", ESPTOOL_DIR)
+    python_exe = env.subst("$PYTHONEXE") or _get_python_executable(env)
+    OBJCOPY_PROG = '"%s" -m esptool' % python_exe
+    ESPTOOLCMD = OBJCOPY_PROG
+
 env.Replace(
     __get_board_boot_mode=_get_board_boot_mode,
     __get_board_f_flash=_get_board_f_flash,
@@ -267,23 +387,18 @@ env.Replace(
     __get_board_flash_mode=_get_board_flash_mode,
     __get_board_memory_type=_get_board_memory_type,
 
-    AR="%s-elf-gcc-ar" % toolchain_arch,
-    AS="%s-elf-as" % toolchain_arch,
-    CC="%s-elf-gcc" % toolchain_arch,
-    CXX="%s-elf-g++" % toolchain_arch,
+    AR=_tool("%s-elf-gcc-ar" % toolchain_arch),
+    AS=_tool("%s-elf-as" % toolchain_arch),
+    CC=_tool("%s-elf-gcc" % toolchain_arch),
+    CXX=_tool("%s-elf-g++" % toolchain_arch),
     GDB=join(
-        platform.get_package_dir(
-            "tool-riscv32-esp-elf-gdb"
-            if mcu in ("esp32c2", "esp32c3", "esp32c5", "esp32c6", "esp32h2", "esp32p4")
-            else "tool-xtensa-esp-elf-gdb"
-        )
-        or "",
+        GDB_PACKAGE_DIR or "",
         "bin",
         "%s-elf-gdb" % toolchain_arch,
     ),
-    OBJCOPY=join(platform.get_package_dir("tool-esptoolpy") or "", "esptool.py"),
-    RANLIB="%s-elf-gcc-ranlib" % toolchain_arch,
-    SIZETOOL="%s-elf-size" % toolchain_arch,
+    OBJCOPY=OBJCOPY_PROG,
+    RANLIB=_tool("%s-elf-gcc-ranlib" % toolchain_arch),
+    SIZETOOL=_tool("%s-elf-size" % toolchain_arch),
 
     ARFLAGS=["rc"],
 
@@ -296,7 +411,8 @@ env.Replace(
         "--chip", mcu,
         "--port", '"$UPLOAD_PORT"'
     ],
-    ERASECMD='"$PYTHONEXE" "$OBJCOPY" $ERASEFLAGS erase_flash',
+    ESPTOOLCMD=ESPTOOLCMD,
+    ERASECMD='$ESPTOOLCMD $ERASEFLAGS erase-flash',
 
     MKFSTOOL="mk%s" % filesystem,
 
@@ -320,11 +436,11 @@ env.Append(
     BUILDERS=dict(
         ElfToBin=Builder(
             action=env.VerboseAction(" ".join([
-                '"$PYTHONEXE" "$OBJCOPY"',
+                '$ESPTOOLCMD',
                 "--chip", mcu, "elf2image",
-                "--flash_mode", "${__get_board_flash_mode(__env__)}",
-                "--flash_freq", "${__get_board_f_image(__env__)}",
-                "--flash_size", board.get("upload.flash_size", "4MB"),
+                "--flash-mode", "${__get_board_flash_mode(__env__)}",
+                "--flash-freq", "${__get_board_f_image(__env__)}",
+                "--flash-size", board.get("upload.flash_size", "4MB"),
                 "-o", "$TARGET", "$SOURCES"
             ]), "Building $TARGET"),
             suffix=".bin"
@@ -444,20 +560,19 @@ if upload_protocol == "espota":
 
 elif upload_protocol == "esptool":
     env.Replace(
-        UPLOADER=join(
-            platform.get_package_dir("tool-esptoolpy") or "", "esptool.py"),
+        UPLOADER=ESPTOOLPROG,
         UPLOADERFLAGS=[
             "--chip", mcu,
             "--port", '"$UPLOAD_PORT"',
             "--baud", "$UPLOAD_SPEED",
             "--before", board.get("upload.before_reset", "default_reset"),
             "--after", board.get("upload.after_reset", "hard_reset"),
-            "write_flash", "-z",
-            "--flash_mode", "${__get_board_flash_mode(__env__)}",
-            "--flash_freq", "${__get_board_f_image(__env__)}",
-            "--flash_size", "detect"
+            "write-flash", "-z",
+            "--flash-mode", "${__get_board_flash_mode(__env__)}",
+            "--flash-freq", "${__get_board_f_image(__env__)}",
+            "--flash-size", "detect"
         ],
-        UPLOADCMD='"$PYTHONEXE" "$UPLOADER" $UPLOADERFLAGS $ESP32_APP_OFFSET $SOURCE'
+        UPLOADCMD='$ESPTOOLCMD $UPLOADERFLAGS $ESP32_APP_OFFSET $SOURCE'
     )
     for image in env.get("FLASH_EXTRA_IMAGES", []):
         env.Append(UPLOADERFLAGS=[image[0], env.subst(image[1])])
@@ -470,13 +585,13 @@ elif upload_protocol == "esptool":
                 "--baud", "$UPLOAD_SPEED",
                 "--before", board.get("upload.before_reset", "default_reset"),
                 "--after", board.get("upload.after_reset", "hard_reset"),
-                "write_flash", "-z",
-                "--flash_mode", "${__get_board_flash_mode(__env__)}",
-                "--flash_freq", "${__get_board_f_image(__env__)}",
-                "--flash_size", "detect",
+                "write-flash", "-z",
+                "--flash-mode", "${__get_board_flash_mode(__env__)}",
+                "--flash-freq", "${__get_board_f_image(__env__)}",
+                "--flash-size", "detect",
                 "$FS_START"
             ],
-            UPLOADCMD='"$PYTHONEXE" "$UPLOADER" $UPLOADERFLAGS $SOURCE',
+            UPLOADCMD='$ESPTOOLCMD $UPLOADERFLAGS $SOURCE',
         )
 
     upload_actions = [
