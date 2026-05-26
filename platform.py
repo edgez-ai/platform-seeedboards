@@ -48,6 +48,49 @@ class SeeedstudioPlatform(PlatformBase):
         self._esp_tools_prepared = False
         self._esp_python_deps_prepared = False
 
+    def _append_pre_extra_script(self, variables, script_path):
+        script_item = f"pre:{script_path}"
+        current = variables.get("extra_scripts")
+
+        if not current:
+            variables["extra_scripts"] = [script_item]
+            return
+
+        if isinstance(current, str):
+            current = [current]
+        elif isinstance(current, tuple):
+            current = list(current)
+
+        if script_item not in current:
+            current.append(script_item)
+        variables["extra_scripts"] = current
+
+    def _is_jlink_enabled(self, variables, board_name):
+        upload_protocol = str(variables.get("upload_protocol", "") or "").lower()
+        debug_tool = str(variables.get("debug_tool", "") or "").lower()
+
+        if "jlink" in upload_protocol or "jlink" in debug_tool:
+            return True
+
+        board_config = self.board_config(board_name)
+        board_upload_protocol = str(board_config.get("upload.protocol", "") or "").lower()
+        board_default_tools = [
+            str(item).lower() for item in (board_config.get("debug.default_tools", []) or [])
+        ]
+        return "jlink" in board_upload_protocol or "jlink" in board_default_tools
+
+    def _configure_nrf_jlink_monitor_defaults(self, variables, board_name):
+        if "nrf" not in (board_name or ""):
+            return
+        if not self._is_jlink_enabled(variables, board_name):
+            return
+
+        variables.setdefault("monitor_speed", "115200")
+        variables.setdefault("monitor_port", "socket://127.0.0.1:19021")
+
+        script_path = str(Path(self.get_dir()) / "scripts" / "jlink_rtt_monitor.py")
+        self._append_pre_extra_script(variables, script_path)
+
     def configure_default_packages(self, variables, targets):
 
         global Architecture
@@ -55,6 +98,7 @@ class SeeedstudioPlatform(PlatformBase):
             return super().configure_default_packages(variables, targets)
 
         board_name = variables.get("board")
+        self._configure_nrf_jlink_monitor_defaults(variables, board_name)
 
         if "esp32" in board_name:
             Architecture = "esp"
