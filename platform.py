@@ -85,6 +85,17 @@ class SeeedstudioPlatform(PlatformBase):
         if not self._is_jlink_enabled(variables, board_name):
             return
 
+        board_config = self.board_config(board_name)
+        mcu = str(board_config.get("build.mcu", "") or "").lower()
+        mcu_to_jlink_device = {
+            "nrf54l15": "NRF54L15_M33",
+            "nrf54l10": "NRF54L10_M33",
+            "nrf54l05": "NRF54L05_M33",
+        }
+        inferred_jlink_device = mcu_to_jlink_device.get(mcu)
+        if inferred_jlink_device:
+            variables.setdefault("board_debug.jlink_device", inferred_jlink_device)
+
         variables.setdefault("monitor_speed", "115200")
         variables.setdefault("monitor_port", "socket://127.0.0.1:19021")
 

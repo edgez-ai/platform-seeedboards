@@ -1,6 +1,22 @@
 import sys
 IS_WINDOWS = sys.platform.startswith("win")
 
+
+def _resolve_jlink_device_name(debug_cfg, board):
+    configured = str(debug_cfg.get("jlink_device") or "").strip()
+    mcu = str(board.get("build.mcu") or "").strip().lower()
+
+    mcu_to_jlink_device = {
+        "nrf54l15": "NRF54L15_M33",
+        "nrf54l10": "NRF54L10_M33",
+        "nrf54l05": "NRF54L05_M33",
+    }
+
+    if configured and not (mcu in mcu_to_jlink_device and configured.lower().endswith("_xxaa")):
+        return configured
+
+    return mcu_to_jlink_device.get(mcu, configured)
+
 def configure_nrf_default_packages(self, variables, targets):
     upload_protocol = ""
     board = variables.get("board")
@@ -92,6 +108,9 @@ def _add_nrf_default_debug_tools(self, board):
         elif link == "jlink":
             assert debug.get("jlink_device"), (
                 "Missed J-Link Device ID for %s" % board.id)
+            resolved_jlink_device = _resolve_jlink_device_name(debug, board)
+            if resolved_jlink_device:
+                debug["jlink_device"] = resolved_jlink_device
             debug["tools"][link] = {
                 "server": {
                     "package": "tool-jlink",
