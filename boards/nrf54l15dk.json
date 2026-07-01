@@ -32,7 +32,7 @@
     "default_tools": [
       "jlink"
     ],
-    "jlink_device": "nRF54L15_xxAA",
+    "jlink_device": "NRF54L15_M33",
     "openocd_target": "$PROJECT_CORE_DIR/platforms/\"$PIOPLATFORM\"/builder/board_build/nrf/nrf54l.cfg",
     "onboard_tools": [
       "cmsis-dap",
